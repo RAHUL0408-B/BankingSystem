@@ -85,49 +85,103 @@ public class AccountEventConsumer {
 }
 ```*/
 
-package com.Banking.Account_Service.Service;
 
+package com.Banking.Account_Service.Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
-
 public class AccountEventConsumer {
+
     private final AccountService accountService;
 
-    @kafkaListener(topics = "transaction.completed")
-    public void consumerTransactionCompleted(
-            @payload Map<String,Object>payload){
-        try{
-            String receiverAccount = (String) payload.get("receiverAccountNumber");
-            BigDecimal amount = new BigDecimal(payload.get("amount").toString());
+    // Consume transaction completed event
+    @KafkaListener(topics = "transaction.completed")
+    public void consumeTransactionCompleted(
+            @Payload Map<String, Object> payload
+    ) {
+        try {
+            String receiverAccountNumber =
+                    (String) payload.get("receiverAccountNumber");
 
-            log.info("Crediting account: {} amount: {}",receiverAccount,amount);
-             accountService.creditBalance(receiverAccount,amount);
-        }
-        catch (Exception e){
-            log.error("Error while credit account: {}",e.getMessage());
+            Object amountValue = payload.get("amount");
 
+            if (receiverAccountNumber == null || amountValue == null) {
+                throw new IllegalArgumentException(
+                        "Missing receiverAccountNumber or amount in event"
+                );
+            }
+
+            BigDecimal amount = new BigDecimal(amountValue.toString());
+
+            log.info(
+                    "Crediting account: {}, amount: {}",
+                    receiverAccountNumber,
+                    amount
+            );
+
+            accountService.creditBalance(receiverAccountNumber, amount);
+
+            log.info(
+                    "Transaction completed successfully for account: {}",
+                    receiverAccountNumber
+            );
+
+        } catch (Exception e) {
+            log.error(
+                    "Error while processing transaction.completed event: {}",
+                    e.getMessage(),
+                    e
+            );
+
+            // Rethrow so the configured Kafka error handler can retry
+            // or route the message to a dead-letter topic.
+            throw e;
         }
     }
-    public void consumerFraudeDetected
-            (@Payload Map<String,Object>payload){
-        try{
-            String accountNumber = (String) payload.get("AccountNyumber");
-            log.info("FraudeDetected: {}",accountNumber);
 
+    // Consume fraud detected event
+    @KafkaListener(topics = "fraud.detected")
+    public void consumeFraudDetected(
+            @Payload Map<String, Object> payload
+    ) {
+        try {
+            String accountNumber =
+                    (String) payload.get("accountNumber");
 
-        }
-        catch (Exception e){
-            log.error("Error while credit account: {}",e.getMessage());
+            if (accountNumber == null) {
+                throw new IllegalArgumentException(
+                        "Missing accountNumber in fraud event"
+                );
+            }
+
+            log.warn(
+                    "Fraud detected for account: {}",
+                    accountNumber
+            );
+
+            // Add your fraud-handling logic here.
+            // For example, block the account after verifying
+            // the fraud event and applicable business rules.
+
+        } catch (Exception e) {
+            log.error(
+                    "Error while processing fraud.detected event: {}",
+                    e.getMessage(),
+                    e
+            );
+
+            throw e;
         }
     }
 }
-

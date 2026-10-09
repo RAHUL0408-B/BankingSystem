@@ -1,5 +1,5 @@
-```java
-        package com.Banking.Account_Service.Service;
+
+package com.Banking.Account_Service.Service;
 
 import com.Banking.Account_Service.Entity.Account;
 import com.Banking.Account_Service.Entity.AccountStatus;
@@ -7,48 +7,62 @@ import com.Banking.Account_Service.Entity.AccountType;
 import com.Banking.Account_Service.dto.AcconutResponse;
 import com.Banking.Account_Service.dto.CreateAccountRequest;
 import com.Banking.Account_Service.repository.Accountrepository;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.UUID;
+import java.security.SecureRandom;
 
 @Service
 @Slf4j
-public class accuntService {
+public class AccountService {
 
     private final Accountrepository accountrepository;
+    private final SecureRandom secureRandom = new SecureRandom();
 
-    public accuntService(Accountrepository accountrepository) {
+    public AccountService(Accountrepository accountrepository) {
         this.accountrepository = accountrepository;
     }
 
     // Create Account
+    @Transactional
     public AcconutResponse createAccount(CreateAccountRequest request) {
 
-        log.info("Creating Account for: {}", request.getEmail());
+        log.info("Creating account for: {}", request.getEmail());
 
-        // Check if account already exists
         if (accountrepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException(
                     "Account already exists: " + request.getEmail()
             );
         }
 
-        Account account = new Account();
+        if (request.getAccountType() == null) {
+            throw new IllegalArgumentException(
+                    "Account type cannot be null"
+            );
+        }
 
+        BigDecimal initialDeposit = request.getInitialDeposit();
+
+        if (initialDeposit == null ||
+                initialDeposit.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException(
+                    "Initial deposit cannot be negative or null"
+            );
+        }
+
+        Account account = new Account();
         account.setAccountHolderName(request.getAccountHolderName());
         account.setEmail(request.getEmail());
         account.setPhone(request.getPhone());
         account.setAccountType(request.getAccountType());
-        account.setBalance(request.getInitialDeposit());
-
-        // Generate account number
+        account.setBalance(initialDeposit);
         account.setAccountNumber(generateAccountNumber());
 
-        // Set daily transaction limit
         account.setDailyTransactionLimit(
-                request.getAccountType() == AccountType.SAVINGS
+                request.getAccountType() == AccountType.SAVING
                         ? new BigDecimal("100000")
                         : new BigDecimal("500000")
         );
@@ -60,74 +74,148 @@ public class accuntService {
                 savedAccount.getAccountNumber()
         );
 
-          return mapToResponse(savedAccount);
+        return mapToResponse(savedAccount);
     }
 
-    public AccountResponse getAccount(String accountNumber){
-        Acconut account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(
-                () -> new RuntimeException("Account not Found"));
+    // Get Account Details
+    public AcconutResponse getAccount(String accountNumber) {
+
+        Account account = accountrepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Account not found: " + accountNumber
+                        )
+                );
+
         return mapToResponse(account);
     }
-    public BigDecimal getAccount(String accountNumber){
-        Acconut account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(
-                () -> new RuntimeException("Account not Found"));
+
+    // Get Account Balance
+    public BigDecimal getAccountBalance(String accountNumber) {
+
+        Account account = accountrepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Account not found: " + accountNumber
+                        )
+                );
+
         return account.getBalance();
     }
 
-    public void BlockedAccount(String accountNumber) {
-        log.info("Blocking Account for: {}", accountNumber);
-        Account account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(() -> new RuntimeException("Account not found"));
+    // Block Account
+    @Transactional
+    public void blockAccount(String accountNumber) {
+
+        log.info("Blocking account: {}", accountNumber);
+
+        Account account = accountrepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Account not found: " + accountNumber
+                        )
+                );
+
         account.setStatus(AccountStatus.BLOCKED);
         accountrepository.save(account);
-        log.info(
-                "Account blocked Successfully: {}",
-                accountNumber);
-    }
-    public void deductBalance(String accountNumber,BigDecimal amount ){
-        log.info("deducting balance {} from account: ,amount, accountNumber);
-                Account account = accountrepository.findByAccountNumber(accountNumber).orElseThro(() -> new RuntimeException("Account Not Found"));
-           if(account.getStatus() != AccountStatus.ACTIVE){
-               throw new RuntimeException("Account Not Active" +accountNumber);
-           }
-           if(account.getBalance().compareTo(amount) < 0){
-               throw new RuntimeException("Insufficient Balance");
-           }
-           account.setBalance(account.getBalance(),subtract(amount));
-           accountRepository.save(account);
-           log.info(
-                   "Account update Successfully: {}",
-                   account.getbalance());
+
+        log.info("Account blocked successfully: {}", accountNumber);
     }
 
-    public void creditBalance(String accountNumber,BigDecimal amount){
-        log.info("crediting balance {} from account: ,amount, accountNumber);");
-        Account account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(() -> new RuntimeException("Account Not Found"));
+    // Deduct Balance
+    @Transactional
+    public void deductBalance(
+            String accountNumber,
+            BigDecimal amount
+    ) {
+        validateAmount(amount);
+
+        Account account = accountrepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Account not found: " + accountNumber
+                        )
+                );
+
+        if (account.getStatus() != AccountStatus.ACTIVE) {
+            throw new RuntimeException(
+                    "Account not active: " + accountNumber
+            );
+        }
+
+        if (account.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Insufficient balance");
+        }
+
+        account.setBalance(account.getBalance().subtract(amount));
+        accountrepository.save(account);
+
+        log.info(
+                "Balance deducted successfully. Remaining balance: {}",
+                account.getBalance()
+        );
+    }
+
+    // Credit Balance
+    @Transactional
+    public void creditBalance(
+            String accountNumber,
+            BigDecimal amount
+    ) {
+        validateAmount(amount);
+
+        Account account = accountrepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Account not found: " + accountNumber
+                        )
+                );
+
+        if (account.getStatus() != AccountStatus.ACTIVE) {
+            throw new RuntimeException(
+                    "Account not active: " + accountNumber
+            );
+        }
+
         account.setBalance(account.getBalance().add(amount));
-        accountrepository
-                .save(account);
-        log.info("Account credited Successfully: {}",account.getBalance());
+        accountrepository.save(account);
+
+        log.info(
+                "Balance credited successfully. Current balance: {}",
+                account.getBalance()
+        );
+    }
+
+    // Validate Transaction Amount
+    private void validateAmount(BigDecimal amount) {
+
+        if (amount == null ||
+                amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Amount must be greater than zero"
+            );
+        }
     }
 
     // Generate Account Number
     private String generateAccountNumber() {
 
-        return "ACC" +
-                UUID.randomUUID()
-                        .toString()
-                        .replace("-", "")
-                        .substring(0, 10)
-                        .toUpperCase();
-    }
-    //genereate unique AccountNumber
-
-  private string generateAccountNumbeer(){
         String accountNumber;
-        do{
-            long Number secureRandom.nextlong(100000000000l);
-            accountNumber = String.format("%12d",number);
-      }while (accountrepository.existByAccountNumber(accountNumber))
-          return accountNumber;
-  }
+
+        do {
+            long number = secureRandom.nextLong(100_000_000_000L);
+            accountNumber = String.format("%012d", number);
+        } while (
+                accountrepository.existsByAccountNumber(accountNumber)
+        );
+
+        return accountNumber;
+    }
 
     // Convert Entity to Response DTO
     private AcconutResponse mapToResponse(Account account) {
@@ -149,4 +237,3 @@ public class accuntService {
         return response;
     }
 }
-```
