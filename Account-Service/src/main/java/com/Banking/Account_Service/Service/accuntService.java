@@ -2,6 +2,7 @@
         package com.Banking.Account_Service.Service;
 
 import com.Banking.Account_Service.Entity.Account;
+import com.Banking.Account_Service.Entity.AccountStatus;
 import com.Banking.Account_Service.Entity.AccountType;
 import com.Banking.Account_Service.dto.AcconutResponse;
 import com.Banking.Account_Service.dto.CreateAccountRequest;
@@ -59,7 +60,52 @@ public class accuntService {
                 savedAccount.getAccountNumber()
         );
 
-        return mapToResponse(savedAccount);
+          return mapToResponse(savedAccount);
+    }
+
+    public AccountResponse getAccount(String accountNumber){
+        Acconut account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(
+                () -> new RuntimeException("Account not Found"));
+        return mapToResponse(account);
+    }
+    public BigDecimal getAccount(String accountNumber){
+        Acconut account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(
+                () -> new RuntimeException("Account not Found"));
+        return account.getBalance();
+    }
+
+    public void BlockedAccount(String accountNumber) {
+        log.info("Blocking Account for: {}", accountNumber);
+        Account account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(() -> new RuntimeException("Account not found"));
+        account.setStatus(AccountStatus.BLOCKED);
+        accountrepository.save(account);
+        log.info(
+                "Account blocked Successfully: {}",
+                accountNumber);
+    }
+    public void deductBalance(String accountNumber,BigDecimal amount ){
+        log.info("deducting balance {} from account: ,amount, accountNumber);
+                Account account = accountrepository.findByAccountNumber(accountNumber).orElseThro(() -> new RuntimeException("Account Not Found"));
+           if(account.getStatus() != AccountStatus.ACTIVE){
+               throw new RuntimeException("Account Not Active" +accountNumber);
+           }
+           if(account.getBalance().compareTo(amount) < 0){
+               throw new RuntimeException("Insufficient Balance");
+           }
+           account.setBalance(account.getBalance(),subtract(amount));
+           accountRepository.save(account);
+           log.info(
+                   "Account update Successfully: {}",
+                   account.getbalance());
+    }
+
+    public void creditBalance(String accountNumber,BigDecimal amount){
+        log.info("crediting balance {} from account: ,amount, accountNumber);");
+        Account account = accountrepository.findByAccountNumber(accountNumber).orElseThrow(() -> new RuntimeException("Account Not Found"));
+        account.setBalance(account.getBalance().add(amount));
+        accountrepository
+                .save(account);
+        log.info("Account credited Successfully: {}",account.getBalance());
     }
 
     // Generate Account Number
@@ -72,6 +118,16 @@ public class accuntService {
                         .substring(0, 10)
                         .toUpperCase();
     }
+    //genereate unique AccountNumber
+
+  private string generateAccountNumbeer(){
+        String accountNumber;
+        do{
+            long Number secureRandom.nextlong(100000000000l);
+            accountNumber = String.format("%12d",number);
+      }while (accountrepository.existByAccountNumber(accountNumber))
+          return accountNumber;
+  }
 
     // Convert Entity to Response DTO
     private AcconutResponse mapToResponse(Account account) {

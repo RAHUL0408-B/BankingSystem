@@ -1,3 +1,4 @@
+/*
 ```java
         package com.Banking.Account_Service.Service;
 
@@ -82,4 +83,51 @@ public class AccountEventConsumer {
         return ResponseEntity.ok("Balance Credited Successfully");
     }
 }
-```
+```*/
+
+package com.Banking.Account_Service.Service;
+
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+
+public class AccountEventConsumer {
+    private final AccountService accountService;
+
+    @kafkaListener(topics = "transaction.completed")
+    public void consumerTransactionCompleted(
+            @payload Map<String,Object>payload){
+        try{
+            String receiverAccount = (String) payload.get("receiverAccountNumber");
+            BigDecimal amount = new BigDecimal(payload.get("amount").toString());
+
+            log.info("Crediting account: {} amount: {}",receiverAccount,amount);
+             accountService.creditBalance(receiverAccount,amount);
+        }
+        catch (Exception e){
+            log.error("Error while credit account: {}",e.getMessage());
+
+        }
+    }
+    public void consumerFraudeDetected
+            (@Payload Map<String,Object>payload){
+        try{
+            String accountNumber = (String) payload.get("AccountNyumber");
+            log.info("FraudeDetected: {}",accountNumber);
+
+
+        }
+        catch (Exception e){
+            log.error("Error while credit account: {}",e.getMessage());
+        }
+    }
+}
+
